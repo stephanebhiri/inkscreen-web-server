@@ -1,0 +1,18 @@
+# Flask Web Framework
+Flask==3.0.3
+Werkzeug==3.0.3
+
+# Authentication
+Flask-HTTPAuth==4.8.0
+
+# Environment Variables
+python-dotenv==1.0.1
+
+# Image Processing
+Pillow==10.4.0
+
+# Task Scheduling
+APScheduler==3.10.4
+
+# System utilities (if needed)
+psutil==6.0.0

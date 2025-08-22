@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Flask
+instance/
+.webassets-cache
+
+# Environment
+.env
+*.env
+
+# Uploads
+uploads/
+playlists/
+thumbnails/
+
+# Logs
+*.log
+
+# System
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
