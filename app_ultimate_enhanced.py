@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from PIL import Image, ImageOps
-from flask import Flask, request, jsonify, render_template_string, send_file, session
+from flask import Flask, request, jsonify, render_template_string, send_file, session, Response
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -46,6 +46,12 @@ users = {ADMIN_USERNAME: generate_password_hash(ADMIN_PASSWORD)}
 
 # Global push status tracking
 push_jobs = {}
+
+# HTTP Polling globals
+IMAGE_PATH = BASE_FOLDER
+current_folder = ""
+current_image = ""
+manual_override = False  # When True, use manual selection instead of playlist
 
 class PushJob:
     def __init__(self, job_id, image_name, image_path):
@@ -437,6 +443,10 @@ class SlideshowManager:
             
             # Update current image name (this is now our reference)
             slideshow_state['current_image_name'] = image_file
+            
+            # Clear manual override when playlist advances automatically
+            global manual_override
+            manual_override = False
             
         except Exception as e:
             print(f"Error in push_next_image: {e}")
@@ -1938,7 +1948,7 @@ def index():
                     <div class="image-info">
                         <div class="image-name" title="${img.name}">${img.name}</div>
                         <div class="image-actions">
-                            <button class="btn btn-primary" onclick="pushImage('${img.name}')">Push</button>
+                            <button class="btn btn-primary" onclick="setCurrentImage('${img.name}')">Set Current</button>
                             <button class="btn btn-secondary" onclick="showMoveModal('${img.name}')">Move</button>
                             <button class="btn btn-danger" onclick="deleteImage('${img.name}')">Delete</button>
                         </div>
@@ -2302,20 +2312,24 @@ def index():
             checkStatus();
         }
         
-        function pushImage(imageName) {
-            fetch(`/api/push/${encodeURIComponent(currentFolder + '/' + imageName)}`, {
-                method: 'POST'
+        function setCurrentImage(imageName) {
+            const imagePath = currentFolder ? currentFolder + '/' + imageName : imageName;
+            fetch(`/api/set_current`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_path: imagePath })
             })
             .then(r => r.json())
             .then(data => {
-                if (data.success && data.job_id) {
-                    trackPushProgress(data.job_id, imageName);
+                if (data.success) {
+                    showNotification('Current Image Set', `${imageName} will display on next ESP32 poll`, 'success');
+                    updateStatus();
                 } else {
-                    showNotification('Push Failed', data.error || 'Unable to start push', 'error');
+                    showNotification('Failed', data.error || 'Unable to set current image', 'error');
                 }
             })
             .catch(err => {
-                showNotification('Push Error', 'Failed to communicate with server', 'error');
+                showNotification('Error', 'Failed to communicate with server', 'error');
             });
         }
         
@@ -2641,6 +2655,35 @@ def api_create_folder():
     if FolderManager.create_folder(path):
         return jsonify({'success': True})
     return jsonify({'error': 'Failed to create folder'}), 400
+
+@app.route('/api/set_current', methods=['POST'])
+@auth.login_required
+def api_set_current_image():
+    data = request.json
+    image_path = data.get('image_path')
+    
+    if not image_path:
+        return jsonify({'error': 'No image path provided'}), 400
+    
+    full_path = os.path.join(IMAGE_PATH, image_path)
+    if not os.path.exists(full_path):
+        return jsonify({'error': 'Image not found'}), 404
+    
+    # Update current image globals and enable manual override
+    global current_folder, current_image, manual_override
+    folder_part = os.path.dirname(image_path)
+    image_name = os.path.basename(image_path)
+    
+    current_folder = folder_part
+    current_image = image_name
+    manual_override = True  # Override playlist with manual selection
+    
+    return jsonify({
+        'success': True,
+        'current_folder': current_folder,
+        'current_image': current_image,
+        'message': f'Current image set to {image_name}'
+    })
 
 @app.route('/api/playlist/')
 @app.route('/api/playlist/<path:folder_path>')
@@ -3033,14 +3076,46 @@ def api_push_status(job_id):
 @app.route('/api/image/info')
 def api_image_info():
     """Get current image hash and metadata for change detection"""
+    global current_folder, current_image, slideshow_state, manual_override
     try:
-        slideshow_data = ConfigManager.load_slideshow_status()
-        current_image = slideshow_data.get('current_image')
-        
-        if not current_image:
-            return jsonify({'error': 'No current image'}), 404
+        # Priority 1: Manual override - use Set Current selection even if playlist is running
+        if manual_override and current_image:
+            pass  # Keep current manual selection
+        # Priority 2: If slideshow is running and no manual override, use current slideshow image
+        elif slideshow_state.get('job_id') and slideshow_state.get('current_image_name'):
+            # slideshow_state.folder_path is already the full path from BASE_FOLDER
+            # We need to extract just the folder name relative to BASE_FOLDER
+            folder_full_path = slideshow_state.get('folder_path', '')
+            if folder_full_path.startswith(BASE_FOLDER):
+                current_folder = os.path.relpath(folder_full_path, BASE_FOLDER)
+            else:
+                current_folder = folder_full_path
+            current_image = slideshow_state.get('current_image_name')
+        # Priority 2: If no image set, pick first available image from playlists directory
+        elif not current_image:
+            try:
+                for root, dirs, files in os.walk(BASE_FOLDER):
+                    for file in files:
+                        if file.lower().endswith(('.jpg', '.png', '.jpeg')):
+                            # Get relative path from BASE_FOLDER
+                            rel_path = os.path.relpath(os.path.join(root, file), BASE_FOLDER)
+                            if '/' in rel_path:
+                                current_folder, current_image = rel_path.split('/', 1)
+                            else:
+                                current_image = rel_path
+                            break
+                    if current_image:
+                        break
+                if not current_image:
+                    return jsonify({'error': 'No images available'}), 404
+            except Exception as e:
+                return jsonify({'error': f'No current image: {e}'}), 404
             
-        full_path = os.path.join(BASE_FOLDER, current_image)
+        # Construct correct path: folder/image or just image if no folder
+        if current_folder:
+            full_path = os.path.join(BASE_FOLDER, current_folder, current_image)
+        else:
+            full_path = os.path.join(BASE_FOLDER, current_image)
         if not os.path.exists(full_path):
             return jsonify({'error': 'Current image file not found'}), 404
         
@@ -3066,13 +3141,18 @@ def api_image_info():
 def api_get_current_image():
     """Serve current image in e-paper format for HTTP polling"""
     try:
-        slideshow_data = ConfigManager.load_slideshow_status()
+        slideshow_data = SlideshowManager.get_status()
+        current_folder = slideshow_data.get('current_folder')
         current_image = slideshow_data.get('current_image')
         
         if not current_image:
             return jsonify({'error': 'No current image'}), 404
             
-        full_path = os.path.join(BASE_FOLDER, current_image)
+        # Construct correct path: folder/image or just image if no folder
+        if current_folder:
+            full_path = os.path.join(BASE_FOLDER, current_folder, current_image)
+        else:
+            full_path = os.path.join(BASE_FOLDER, current_image)
         if not os.path.exists(full_path):
             return jsonify({'error': 'Current image file not found'}), 404
         
@@ -3097,31 +3177,42 @@ def api_get_current_image():
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 def convert_image_to_epaper_format(image_path):
-    """Convert image to e-paper binary format using existing Sierra SORBET dithering"""
+    """Convert image to e-paper binary format using Sierra SORBET dithering"""
     try:
-        import subprocess
-        import tempfile
+        from dither_sierra_sorbet import sierra_sorbet_dither
+        import numpy as np
+        from PIL import Image
         
-        # Use existing push script to generate the binary data
-        # But capture the data instead of sending to TCP
-        with tempfile.NamedTemporaryFile() as temp_file:
-            # Run the conversion part of push script
-            result = subprocess.run([
-                '/usr/bin/python3', 
-                '/home/debian/convert_to_binary.py',  # We'll create this
-                image_path
-            ], capture_output=True, text=False, timeout=30)
-            
-            if result.returncode != 0:
-                print(f"Conversion failed: {result.stderr}")
-                return None
-                
-            return result.stdout  # Binary data
-            
+        # Constants
+        EPD_W, EPD_H = 1200, 1600
+        PALETTE_RGB = [(0,0,0), (255,255,255), (255,255,0), (255,0,0), (0,0,255), (0,255,0)]
+        CODE_MAP = [0x0, 0x1, 0x2, 0x3, 0x5, 0x6]
+        
+        # Load and process image
+        im = Image.open(image_path).convert("RGB")
+        im = crop_center_zoom(im)
+        im = im.resize((EPD_W, EPD_H), Image.Resampling.LANCZOS)
+        im = enhance_image(im)
+        
+        # Sierra SORBET dithering
+        img_array = np.array(im, dtype=np.float32)
+        palette_np = np.array(PALETTE_RGB, dtype=np.float32)
+        indices_2d = sierra_sorbet_dither(img_array, palette_np)
+        indices = indices_2d.flatten()
+        
+        # Pack to binary format (same as push script)
+        left_data = pack_half(indices, 0, 600)
+        right_data = pack_half(indices, 600, 1200)
+        
+        # Combine Master + Slave data
+        binary_data = left_data + right_data
+        return binary_data
+        
     except Exception as e:
         print(f"Error converting image with Sierra SORBET: {e}")
-        # Fallback to simple conversion
-        return convert_image_simple(image_path)
+        import traceback
+        traceback.print_exc()
+        return None
 
 def convert_image_simple(image_path):
     """Fallback simple conversion if Sierra SORBET fails"""
@@ -3206,6 +3297,67 @@ def pack_half(indices, x0, x1):
             out[off] = (a << 4) | (b & 0x0F)
             off += 1
     return bytes(out)
+
+@app.route('/api/image/stream')
+def api_image_stream():
+    """Stream current image data line by line for ESP32 HTTP polling"""
+    global current_folder, current_image
+    try:
+        # Use same logic as /api/image/info
+        if not current_image:
+            try:
+                for root, dirs, files in os.walk(BASE_FOLDER):
+                    for file in files:
+                        if file.lower().endswith(('.jpg', '.png', '.jpeg')):
+                            # Get relative path from BASE_FOLDER
+                            rel_path = os.path.relpath(os.path.join(root, file), BASE_FOLDER)
+                            if '/' in rel_path:
+                                current_folder, current_image = rel_path.split('/', 1)
+                            else:
+                                current_image = rel_path
+                            break
+                    if current_image:
+                        break
+                if not current_image:
+                    return jsonify({'error': 'No images available'}), 404
+            except Exception as e:
+                return jsonify({'error': f'No current image: {e}'}), 404
+            
+        # Construct correct path: folder/image or just image if no folder
+        if current_folder:
+            full_path = os.path.join(BASE_FOLDER, current_folder, current_image)
+        else:
+            full_path = os.path.join(BASE_FOLDER, current_image)
+        if not os.path.exists(full_path):
+            return jsonify({'error': 'Current image file not found'}), 404
+        
+        print(f"[HTTP] Streaming {current_image}")
+        
+        # Convert image to binary data using existing function
+        binary_data = convert_image_to_epaper_format(full_path)
+        if not binary_data:
+            return jsonify({'error': 'Failed to convert image'}), 500
+            
+        def generate_stream():
+            # Stream 300 bytes at a time (line by line)
+            BYTES_PER_LINE_HALF = 300
+            for i in range(0, len(binary_data), BYTES_PER_LINE_HALF):
+                chunk = binary_data[i:i + BYTES_PER_LINE_HALF]
+                if len(chunk) == BYTES_PER_LINE_HALF:
+                    yield chunk
+                else:
+                    # Pad last chunk if needed
+                    yield chunk + b'\x00' * (BYTES_PER_LINE_HALF - len(chunk))
+        
+        return Response(generate_stream(), 
+                       mimetype='application/octet-stream',
+                       headers={'Content-Length': str(len(binary_data))})
+                       
+    except Exception as e:
+        print(f"Error in image streaming: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/slideshow/start/', methods=['POST'])
 @app.route('/api/slideshow/start/<path:folder_path>', methods=['POST'])
@@ -3368,4 +3520,4 @@ if __name__ == '__main__':
     FolderManager.ensure_base_folder()
     # Run initial cleanup
     cleanup_orphaned_thumbnails()
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5001, debug=False)
