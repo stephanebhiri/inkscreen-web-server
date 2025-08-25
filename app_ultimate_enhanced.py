@@ -3030,6 +3030,183 @@ def api_push_status(job_id):
     
     return jsonify(job.to_dict())
 
+@app.route('/api/image/info')
+def api_image_info():
+    """Get current image hash and metadata for change detection"""
+    try:
+        slideshow_data = ConfigManager.load_slideshow_status()
+        current_image = slideshow_data.get('current_image')
+        
+        if not current_image:
+            return jsonify({'error': 'No current image'}), 404
+            
+        full_path = os.path.join(BASE_FOLDER, current_image)
+        if not os.path.exists(full_path):
+            return jsonify({'error': 'Current image file not found'}), 404
+        
+        # Calculate MD5 hash of current image file
+        import hashlib
+        hash_md5 = hashlib.md5()
+        with open(full_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        
+        file_hash = hash_md5.hexdigest()[:12]  # Short hash
+        
+        return jsonify({
+            'hash': file_hash,
+            'image_name': os.path.basename(current_image),
+            'timestamp': int(os.path.getmtime(full_path))
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/image')
+def api_get_current_image():
+    """Serve current image in e-paper format for HTTP polling"""
+    try:
+        slideshow_data = ConfigManager.load_slideshow_status()
+        current_image = slideshow_data.get('current_image')
+        
+        if not current_image:
+            return jsonify({'error': 'No current image'}), 404
+            
+        full_path = os.path.join(BASE_FOLDER, current_image)
+        if not os.path.exists(full_path):
+            return jsonify({'error': 'Current image file not found'}), 404
+        
+        # Convert image to e-paper format
+        epaper_data = convert_image_to_epaper_format(full_path)
+        
+        if not epaper_data:
+            return jsonify({'error': 'Failed to convert image'}), 500
+            
+        # Return binary image data
+        from flask import Response
+        return Response(
+            epaper_data,
+            mimetype='application/octet-stream',
+            headers={
+                'Content-Length': str(len(epaper_data)),
+                'Cache-Control': 'no-cache'
+            }
+        )
+        
+    except Exception as e:
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+def convert_image_to_epaper_format(image_path):
+    """Convert image to e-paper binary format using existing Sierra SORBET dithering"""
+    try:
+        import subprocess
+        import tempfile
+        
+        # Use existing push script to generate the binary data
+        # But capture the data instead of sending to TCP
+        with tempfile.NamedTemporaryFile() as temp_file:
+            # Run the conversion part of push script
+            result = subprocess.run([
+                '/usr/bin/python3', 
+                '/home/debian/convert_to_binary.py',  # We'll create this
+                image_path
+            ], capture_output=True, text=False, timeout=30)
+            
+            if result.returncode != 0:
+                print(f"Conversion failed: {result.stderr}")
+                return None
+                
+            return result.stdout  # Binary data
+            
+    except Exception as e:
+        print(f"Error converting image with Sierra SORBET: {e}")
+        # Fallback to simple conversion
+        return convert_image_simple(image_path)
+
+def convert_image_simple(image_path):
+    """Fallback simple conversion if Sierra SORBET fails"""
+    try:
+        from PIL import ImageEnhance
+        import numpy as np
+        
+        # Same logic as your push script but simplified
+        img = Image.open(image_path).convert('RGB')
+        
+        # Crop center zoom like your script
+        img = crop_center_zoom(img)
+        img = img.resize((1200, 1600), Image.Resampling.LANCZOS)
+        img = enhance_image(img)
+        
+        # Try to import Sierra SORBET if available
+        try:
+            from dither_sierra_sorbet import sierra_sorbet_dither
+            img_array = np.array(img, dtype=np.float32)
+            palette_np = np.array([
+                [0,0,0], [255,255,255], [255,255,0], 
+                [255,0,0], [0,0,255], [0,255,0]
+            ], dtype=np.float32)
+            indices_2d = sierra_sorbet_dither(img_array, palette_np)
+            idx = indices_2d.flatten()
+        except ImportError:
+            # Basic fallback
+            img = img.quantize(colors=6, method=Image.Quantize.MEDIANCUT)
+            idx = list(img.getdata())
+        
+        # Pack into binary format like your script
+        left = pack_half(idx, 0, 600)
+        right = pack_half(idx, 600, 1200)
+        
+        return left + right
+        
+    except Exception as e:
+        print(f"Simple conversion failed: {e}")
+        return None
+
+def crop_center_zoom(im, target_ratio=12/16):
+    """Same crop logic as push script"""
+    original_width, original_height = im.size
+    original_ratio = original_width / original_height
+    
+    if original_ratio > target_ratio:
+        new_width = int(original_height * target_ratio)
+        left = (original_width - new_width) // 2
+        right = left + new_width
+        crop_box = (left, 0, right, original_height)
+    else:
+        new_height = int(original_width / target_ratio)
+        top = (original_height - new_height) // 2
+        bottom = top + new_height
+        crop_box = (0, top, original_width, bottom)
+    
+    return im.crop(crop_box)
+
+def enhance_image(im):
+    """Same enhancement as push script"""
+    from PIL import ImageEnhance
+    enhancer = ImageEnhance.Contrast(im)
+    im = enhancer.enhance(1.2)
+    enhancer = ImageEnhance.Color(im)
+    im = enhancer.enhance(1.3)
+    enhancer = ImageEnhance.Brightness(im)
+    im = enhancer.enhance(1.05)
+    return im
+
+def pack_half(indices, x0, x1):
+    """Same packing logic as push script"""
+    EPD_W, EPD_H = 1200, 1600
+    CODE_MAP = [0x0, 0x1, 0x2, 0x3, 0x5, 0x6]
+    
+    out = bytearray((x1-x0)//2 * EPD_H)
+    off = 0
+    for y in range(EPD_H):
+        row = indices[y*EPD_W + x0 : y*EPD_W + x1]
+        for i in range(0, 600, 2):
+            a = CODE_MAP[row[i]]
+            b = CODE_MAP[row[i+1]]
+            out[off] = (a << 4) | (b & 0x0F)
+            off += 1
+    return bytes(out)
+
 @app.route('/api/slideshow/start/', methods=['POST'])
 @app.route('/api/slideshow/start/<path:folder_path>', methods=['POST'])
 @auth.login_required
