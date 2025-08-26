@@ -1,0 +1,372 @@
+import os
+import json
+import shutil
+import subprocess
+import threading
+import time
+from datetime import datetime
+
+class PushJob:
+    def __init__(self, job_id, image_name, image_path):
+        self.job_id = job_id
+        self.image_name = image_name
+        self.image_path = image_path
+        self.status = 'starting'  # starting, dithering, sending, completed, failed
+        self.progress = 0
+        self.message = 'Initializing...'
+        self.start_time = time.time()
+        self.error = None
+        
+    def update(self, status, progress=None, message=None):
+        self.status = status
+        if progress is not None:
+            self.progress = progress
+        if message is not None:
+            self.message = message
+            
+    def to_dict(self):
+        return {
+            'job_id': self.job_id,
+            'image_name': self.image_name,
+            'status': self.status,
+            'progress': self.progress,
+            'message': self.message,
+            'elapsed': time.time() - self.start_time,
+            'error': self.error
+        }
+
+class PlaylistManager:
+    def __init__(self, base_folder):
+        self.base_folder = base_folder
+
+    def get_playlist_file(self, folder_path):
+        return os.path.join(folder_path, '.playlist.json')
+    
+    def load_playlist(self, folder_path):
+        playlist_file = self.get_playlist_file(folder_path)
+        if os.path.exists(playlist_file):
+            with open(playlist_file, 'r') as f:
+                return json.load(f)
+        return {
+            'name': os.path.basename(folder_path),
+            'created': datetime.now().isoformat(),
+            'modified': datetime.now().isoformat(),
+            'order': [],
+            'settings': {
+                'interval': 300,
+                'shuffle': False,
+                'loop': True,
+                'active': False
+            },
+            'tags': [],
+            'description': '',
+            'stats': {
+                'play_count': 0,
+                'last_played': None,
+                'total_duration': 0
+            }
+        }
+    
+    def save_playlist(self, folder_path, playlist_data):
+        playlist_data['modified'] = datetime.now().isoformat()
+        playlist_file = self.get_playlist_file(folder_path)
+        with open(playlist_file, 'w') as f:
+            json.dump(playlist_data, f, indent=2)
+    
+    def update_order(self, folder_path, new_order=None):
+        playlist = self.load_playlist(folder_path)
+        
+        current_images = []
+        for f in os.listdir(folder_path):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+                current_images.append(f)
+        
+        if new_order:
+            playlist['order'] = [img for img in new_order if img in current_images]
+            for img in current_images:
+                if img not in playlist['order']:
+                    playlist['order'].append(img)
+        else:
+            existing_order = playlist.get('order', [])
+            new_order = []
+            
+            for img in existing_order:
+                if img in current_images:
+                    new_order.append(img)
+            
+            for img in current_images:
+                if img not in new_order:
+                    new_order.append(img)
+            
+            playlist['order'] = new_order
+        
+        self.save_playlist(folder_path, playlist)
+        return playlist
+
+class FolderManager:
+    def __init__(self, base_folder, thumbnails_folder):
+        self.base_folder = base_folder
+        self.thumbnails_folder = thumbnails_folder
+        self.playlist_manager = PlaylistManager(base_folder)
+
+    def ensure_base_folder(self):
+        os.makedirs(self.base_folder, exist_ok=True)
+        os.makedirs(self.thumbnails_folder, exist_ok=True)
+    
+    def create_folder(self, path):
+        full_path = os.path.join(self.base_folder, path.strip('/'))
+        os.makedirs(full_path, exist_ok=True)
+        self.playlist_manager.update_order(full_path)
+        return True
+    
+    def get_folder_tree(self):
+        self.ensure_base_folder()
+        
+        root_images = [f for f in os.listdir(self.base_folder) 
+                      if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        root_playlist = self.playlist_manager.load_playlist(self.base_folder)
+        
+        tree = [{
+            'name': '📁 Root',
+            'path': '',
+            'type': 'folder',
+            'children': [],
+            'image_count': len(root_images),
+            'active': root_playlist.get('settings', {}).get('active', False)
+        }]
+        
+        def walk_dir(path, rel_path=''):
+            items = []
+            try:
+                for item in sorted(os.listdir(path)):
+                    if item.startswith('.'):
+                        continue
+                    
+                    item_path = os.path.join(path, item)
+                    item_rel_path = os.path.join(rel_path, item)
+                    
+                    if os.path.isdir(item_path):
+                        children = walk_dir(item_path, item_rel_path)
+                        playlist = self.playlist_manager.load_playlist(item_path)
+                        items.append({
+                            'name': item,
+                            'path': item_rel_path,
+                            'type': 'folder',
+                            'children': children,
+                            'image_count': len([f for f in os.listdir(item_path) 
+                                              if f.lower().endswith(('.jpg', '.jpeg', '.png'))]),
+                            'active': playlist.get('settings', {}).get('active', False)
+                        })
+            except PermissionError:
+                pass
+            
+            return items
+        
+        tree[0]['children'] = walk_dir(self.base_folder)
+        return tree
+    
+    def move_image(self, image_path, from_folder, to_folder):
+        from_path = os.path.join(self.base_folder, from_folder.strip('/'), image_path)
+        to_path = os.path.join(self.base_folder, to_folder.strip('/'), image_path)
+        
+        if os.path.exists(from_path):
+            os.makedirs(os.path.dirname(to_path), exist_ok=True)
+            shutil.move(from_path, to_path)
+            
+            self.playlist_manager.update_order(os.path.dirname(from_path))
+            self.playlist_manager.update_order(os.path.dirname(to_path))
+            
+            thumb_from = os.path.join(self.thumbnails_folder, f"{os.path.splitext(image_path)[0]}_thumb.jpg")
+            thumb_to = os.path.join(self.thumbnails_folder, f"{to_folder}_{os.path.splitext(image_path)[0]}_thumb.jpg")
+            if os.path.exists(thumb_from):
+                shutil.move(thumb_from, thumb_to)
+            
+            return True
+        return False
+
+class SlideshowManager:
+    def __init__(self, scheduler, base_folder):
+        self.scheduler = scheduler
+        self.base_folder = base_folder
+        self.playlist_manager = PlaylistManager(base_folder)
+        self.slideshow_state = {
+            'job_id': None,
+            'folder_path': '',
+            'current_image_name': None,
+            'loop_count': 0,
+            'images': [],
+            'settings': {}
+        }
+
+    def get_status(self):
+        job_id = self.slideshow_state.get('job_id')
+        job = self.scheduler.get_job(job_id) if job_id else None
+        
+        if job and job_id:
+            images = self.slideshow_state['images']
+            current_image_name = self.slideshow_state['current_image_name']
+            settings = self.slideshow_state['settings']
+            
+            current_image = current_image_name or ''
+            
+            if current_image_name and current_image_name in images and images:
+                current_index = images.index(current_image_name)
+                next_index = current_index + 1
+                
+                if next_index >= len(images):
+                    if settings.get('loop', True):
+                        next_image = images[0]
+                        displayed_index = current_index
+                    else:
+                        next_image = ''
+                        displayed_index = current_index
+                else:
+                    next_image = images[next_index]
+                    displayed_index = current_index
+            else:
+                next_image = images[0] if images else ''
+                displayed_index = 0
+            
+            return {
+                'running': True,
+                'current_folder': self.slideshow_state['folder_path'].replace(self.base_folder, '').strip('/'),
+                'current_image': current_image,
+                'next_image': next_image,
+                'current_index': displayed_index + 1,
+                'total_images': len(images),
+                'loop_count': self.slideshow_state['loop_count'],
+                'loop_enabled': settings.get('loop', True),
+                'shuffle_enabled': settings.get('shuffle', False),
+                'interval': settings.get('interval', 300),
+                'start_time': datetime.now().isoformat(),
+                'next_change': job.next_run_time.timestamp() if job.next_run_time else None
+            }
+        
+        return {
+            'running': False,
+            'current_folder': '',
+            'current_image': '',
+            'next_image': '',
+            'current_index': 0,
+            'total_images': 0,
+            'loop_count': 0,
+            'start_time': None,
+            'next_change': None
+        }
+    
+    def push_next_image(self):
+        try:
+            images = self.slideshow_state['images']
+            current_image_name = self.slideshow_state['current_image_name']
+            settings = self.slideshow_state['settings']
+            folder_path = self.slideshow_state['folder_path']
+            
+            if not images:
+                self.stop()
+                return
+            
+            if current_image_name and current_image_name in images:
+                current_index = images.index(current_image_name)
+                next_index = current_index + 1
+            else:
+                next_index = 0
+            
+            if next_index >= len(images):
+                if settings.get('loop', True):
+                    next_index = 0
+                    self.slideshow_state['loop_count'] += 1
+                    
+                    if settings.get('shuffle', False):
+                        import random
+                        random.shuffle(self.slideshow_state['images'])
+                        images = self.slideshow_state['images']
+                        next_index = 0
+                else:
+                    self.stop()
+                    return
+            
+            image_file = images[next_index]
+            image_path = os.path.join(folder_path, image_file)
+            
+            subprocess.run([
+                os.getenv('PUSH_SCRIPT', './push_epaper_sierra_sorbet_fast.py'),
+                image_path,
+                '--host', os.getenv('ESP32_HOST', '192.168.1.100')
+            ], check=False, timeout=30)
+            
+            self.slideshow_state['current_image_name'] = image_file
+            
+        except Exception as e:
+            print(f"Error in push_next_image: {e}")
+    
+    def start(self, folder_path):
+        self.stop()
+        
+        playlist = self.playlist_manager.load_playlist(folder_path)
+        settings = playlist.get('settings', {})
+        interval = settings.get('interval', 300)
+        
+        images = playlist.get('order', [])
+        if not images:
+            images = [f for f in os.listdir(folder_path) 
+                     if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        
+        if not images:
+            return False
+        
+        if settings.get('shuffle', False):
+            import random
+            images = images.copy()
+            random.shuffle(images)
+        
+        self.slideshow_state = {
+            'job_id': None,
+            'folder_path': folder_path,
+            'current_image_name': None,
+            'loop_count': 0,
+            'images': images,
+            'settings': settings
+        }
+        
+        try:
+            self.push_next_image()
+        except Exception as e:
+            print(f"[DEBUG] Error pushing first image: {e}")
+        
+        try:
+            job = self.scheduler.add_job(
+                self.push_next_image,
+                'interval',
+                seconds=interval,
+                id='slideshow_job',
+                replace_existing=True,
+                max_instances=1
+            )
+            self.slideshow_state['job_id'] = job.id
+        except Exception as e:
+            print(f"[DEBUG] Error creating job: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        
+        playlist['stats']['play_count'] = playlist['stats'].get('play_count', 0) + 1
+        playlist['stats']['last_played'] = datetime.now().isoformat()
+        self.playlist_manager.save_playlist(folder_path, playlist)
+        
+        return True
+    
+    def stop(self):
+        if self.slideshow_state.get('job_id'):
+            try:
+                self.scheduler.remove_job(self.slideshow_state['job_id'])
+            except:
+                pass
+        
+        self.slideshow_state = {
+            'job_id': None,
+            'folder_path': '',
+            'current_image_name': None,
+            'loop_count': 0,
+            'images': [],
+            'settings': {}
+        }
