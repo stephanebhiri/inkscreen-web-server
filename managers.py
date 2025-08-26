@@ -11,7 +11,7 @@ class PushJob:
         self.job_id = job_id
         self.image_name = image_name
         self.image_path = image_path
-        self.status = 'starting'  # starting, dithering, sending, completed, failed
+        self.status = 'starting'
         self.progress = 0
         self.message = 'Initializing...'
         self.start_time = time.time()
@@ -185,27 +185,20 @@ class FolderManager:
         return False
 
 class SlideshowManager:
-    def __init__(self, scheduler, base_folder):
+    def __init__(self, scheduler, base_folder, app_state):
         self.scheduler = scheduler
         self.base_folder = base_folder
         self.playlist_manager = PlaylistManager(base_folder)
-        self.slideshow_state = {
-            'job_id': None,
-            'folder_path': '',
-            'current_image_name': None,
-            'loop_count': 0,
-            'images': [],
-            'settings': {}
-        }
+        self.app_state = app_state
 
     def get_status(self):
-        job_id = self.slideshow_state.get('job_id')
+        job_id = self.app_state.slideshow_state.get('job_id')
         job = self.scheduler.get_job(job_id) if job_id else None
         
         if job and job_id:
-            images = self.slideshow_state['images']
-            current_image_name = self.slideshow_state['current_image_name']
-            settings = self.slideshow_state['settings']
+            images = self.app_state.slideshow_state['images']
+            current_image_name = self.app_state.slideshow_state['current_image_name']
+            settings = self.app_state.slideshow_state['settings']
             
             current_image = current_image_name or ''
             
@@ -229,12 +222,12 @@ class SlideshowManager:
             
             return {
                 'running': True,
-                'current_folder': self.slideshow_state['folder_path'].replace(self.base_folder, '').strip('/'),
+                'current_folder': self.app_state.slideshow_state['folder_path'].replace(self.base_folder, '').strip('/'),
                 'current_image': current_image,
                 'next_image': next_image,
                 'current_index': displayed_index + 1,
                 'total_images': len(images),
-                'loop_count': self.slideshow_state['loop_count'],
+                'loop_count': self.app_state.slideshow_state['loop_count'],
                 'loop_enabled': settings.get('loop', True),
                 'shuffle_enabled': settings.get('shuffle', False),
                 'interval': settings.get('interval', 300),
@@ -256,10 +249,10 @@ class SlideshowManager:
     
     def push_next_image(self):
         try:
-            images = self.slideshow_state['images']
-            current_image_name = self.slideshow_state['current_image_name']
-            settings = self.slideshow_state['settings']
-            folder_path = self.slideshow_state['folder_path']
+            images = self.app_state.slideshow_state['images']
+            current_image_name = self.app_state.slideshow_state['current_image_name']
+            settings = self.app_state.slideshow_state['settings']
+            folder_path = self.app_state.slideshow_state['folder_path']
             
             if not images:
                 self.stop()
@@ -274,12 +267,12 @@ class SlideshowManager:
             if next_index >= len(images):
                 if settings.get('loop', True):
                     next_index = 0
-                    self.slideshow_state['loop_count'] += 1
+                    self.app_state.slideshow_state['loop_count'] += 1
                     
                     if settings.get('shuffle', False):
                         import random
-                        random.shuffle(self.slideshow_state['images'])
-                        images = self.slideshow_state['images']
+                        random.shuffle(self.app_state.slideshow_state['images'])
+                        images = self.app_state.slideshow_state['images']
                         next_index = 0
                 else:
                     self.stop()
@@ -294,7 +287,8 @@ class SlideshowManager:
                 '--host', os.getenv('ESP32_HOST', '192.168.1.100')
             ], check=False, timeout=30)
             
-            self.slideshow_state['current_image_name'] = image_file
+            self.app_state.slideshow_state['current_image_name'] = image_file
+            self.app_state.manual_override = False
             
         except Exception as e:
             print(f"Error in push_next_image: {e}")
@@ -319,7 +313,7 @@ class SlideshowManager:
             images = images.copy()
             random.shuffle(images)
         
-        self.slideshow_state = {
+        self.app_state.slideshow_state = {
             'job_id': None,
             'folder_path': folder_path,
             'current_image_name': None,
@@ -342,7 +336,7 @@ class SlideshowManager:
                 replace_existing=True,
                 max_instances=1
             )
-            self.slideshow_state['job_id'] = job.id
+            self.app_state.slideshow_state['job_id'] = job.id
         except Exception as e:
             print(f"[DEBUG] Error creating job: {e}")
             import traceback
@@ -356,13 +350,13 @@ class SlideshowManager:
         return True
     
     def stop(self):
-        if self.slideshow_state.get('job_id'):
+        if self.app_state.slideshow_state.get('job_id'):
             try:
-                self.scheduler.remove_job(self.slideshow_state['job_id'])
+                self.scheduler.remove_job(self.app_state.slideshow_state['job_id'])
             except:
                 pass
         
-        self.slideshow_state = {
+        self.app_state.slideshow_state = {
             'job_id': None,
             'folder_path': '',
             'current_image_name': None,
