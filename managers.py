@@ -5,6 +5,10 @@ import subprocess
 import threading
 import time
 from datetime import datetime
+from logger_config import get_logger
+
+# Module logger
+logger = get_logger('managers')
 
 class PushJob:
     def __init__(self, job_id, image_name, image_path):
@@ -291,7 +295,7 @@ class SlideshowManager:
             self.app_state.manual_override = False
             
         except Exception as e:
-            print(f"Error in push_next_image: {e}")
+            logger.error(f"Error in push_next_image: {e}")
     
     def start(self, folder_path):
         self.stop()
@@ -325,7 +329,7 @@ class SlideshowManager:
         try:
             self.push_next_image()
         except Exception as e:
-            print(f"[DEBUG] Error pushing first image: {e}")
+            logger.warning(f"Error pushing first image: {e}")
         
         try:
             job = self.scheduler.add_job(
@@ -338,9 +342,7 @@ class SlideshowManager:
             )
             self.app_state.slideshow_state['job_id'] = job.id
         except Exception as e:
-            print(f"[DEBUG] Error creating job: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error creating job: {e}", exc_info=True)
             return False
         
         playlist['stats']['play_count'] = playlist['stats'].get('play_count', 0) + 1

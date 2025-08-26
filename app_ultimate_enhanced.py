@@ -34,6 +34,11 @@ from managers import (
     SlideshowManager,
 )
 from state import AppState
+from logger_config import setup_logger, get_logger
+
+# Setup logging
+logger = setup_logger()
+app_logger = get_logger('app')
 
 try:
     from dotenv import load_dotenv
@@ -174,7 +179,7 @@ def create_optimized_thumbnail(image_path, thumb_path, format='jpeg', quality=85
         
         return True
     except Exception as e:
-        print(f"Error creating optimized thumbnail: {e}")
+        app_logger.error(f"Error creating optimized thumbnail: {e}")
         if format != 'jpeg':
             return create_optimized_thumbnail(image_path, thumb_path, 'jpeg', quality, size)
         return False
@@ -198,7 +203,7 @@ def resize_large_image(image_path, max_size_mb=MAX_IMAGE_SIZE_MB):
         img.save(image_path, quality=85, optimize=True)
         return True
     except Exception as e:
-        print(f"Error resizing image: {e}")
+        app_logger.error(f"Error resizing image: {e}")
         return False
 
 def check_storage_and_cleanup():
@@ -232,9 +237,9 @@ def check_storage_and_cleanup():
                     os.remove(thumb_path)
                 
                 total_size -= file_size
-                print(f"Removed old file: {file_path}")
+                app_logger.info(f"Removed old file: {file_path}")
             except Exception as e:
-                print(f"Error removing file: {e}")
+                app_logger.error(f"Error removing file: {e}")
 
 @app.route('/')
 @auth.login_required
@@ -377,12 +382,11 @@ def api_upload(folder_path=''):
     
     return jsonify({'success': True, 'uploaded': uploaded})
 
-thumbnail_call_count = 0
+# thumbnail_call_count moved to AppState
 
 @app.route('/api/thumbnail/<path:image_path>')
 def api_get_thumbnail(image_path):
-    global thumbnail_call_count
-    thumbnail_call_count += 1
+    app_state.thumbnail_call_count += 1
     
     accept_header = request.headers.get('Accept', '')
     quality = int(request.args.get('q', '85'))
@@ -600,18 +604,18 @@ def api_image_info():
         app_state.esp32_stats["heap"] = int(request.args.get("heap", 0))
         app_state.esp32_stats["uptime"] = int(request.args.get("uptime", 0))
         app_state.esp32_stats["last_seen"] = datetime.now().strftime("%H:%M:%S")
-        print(f"[ESP32] Battery: {app_state.esp32_stats['battery']}% | RSSI: {app_state.esp32_stats['rssi']}dBm | Heap: {app_state.esp32_stats['heap']}B | Uptime: {app_state.esp32_stats['uptime']}s")
+        app_logger.info(f"[ESP32] Battery: {app_state.esp32_stats['battery']}% | RSSI: {app_state.esp32_stats['rssi']}dBm | Heap: {app_state.esp32_stats['heap']}B | Uptime: {app_state.esp32_stats['uptime']}s")
     
     try:
         if app_state.manual_override and app_state.current_image:
             pass
-        elif slideshow_manager.app_state.slideshow_state.get('job_id') and slideshow_manager.app_state.slideshow_state.get('current_image_name'):
-            folder_full_path = slideshow_manager.app_state.slideshow_state.get('folder_path', '')
+        elif app_state.slideshow_state.get('job_id') and app_state.slideshow_state.get('current_image_name'):
+            folder_full_path = app_state.slideshow_state.get('folder_path', '')
             if folder_full_path.startswith(BASE_FOLDER):
                 app_state.current_folder = os.path.relpath(folder_full_path, BASE_FOLDER)
             else:
                 app_state.current_folder = folder_full_path
-            app_state.current_image = slideshow_manager.app_state.slideshow_state.get('current_image_name')
+            app_state.current_image = app_state.slideshow_state.get('current_image_name')
         elif not app_state.current_image:
             for root, dirs, files in os.walk(BASE_FOLDER):
                 for file in files:
@@ -710,7 +714,7 @@ def convert_image_to_epaper_format(image_path):
         return left_data + right_data
         
     except Exception as e:
-        print(f"Error converting image with Sierra SORBET: {e}")
+        app_logger.error(f"Error converting image with Sierra SORBET: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -782,7 +786,7 @@ def api_image_stream():
         if not os.path.exists(full_path):
             return jsonify({'error': 'Current image file not found'}), 404
         
-        print(f"[HTTP] Streaming {app_state.current_image}")
+        app_logger.info(f"[HTTP] Streaming {app_state.current_image}")
         
         binary_data = convert_image_to_epaper_format(full_path)
         if not binary_data:
@@ -802,7 +806,7 @@ def api_image_stream():
                        headers={'Content-Length': str(len(binary_data))})
                        
     except Exception as e:
-        print(f"Error in image streaming: {e}")
+        app_logger.error(f"Error in image streaming: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Server error: {str(e)}'}), 500
@@ -872,7 +876,7 @@ def api_refresh_thumbnails(folder_path=''):
                     else:
                         errors += 1
                 except Exception as e:
-                    print(f"Error regenerating thumbnail for {file}: {e}")
+                    app_logger.error(f"Error regenerating thumbnail for {file}: {e}")
                     errors += 1
     
     return jsonify({
@@ -906,10 +910,9 @@ def api_scheduler_jobs():
 
 @app.route('/api/thumbnail/stats')
 def api_thumbnail_stats():
-    global thumbnail_call_count
     return jsonify({
-        'total_calls': thumbnail_call_count,
-        'message': f'Thumbnail API called {thumbnail_call_count} times since server start'
+        'total_calls': app_state.thumbnail_call_count,
+        'message': f'Thumbnail API called {app_state.thumbnail_call_count} times since server start'
     })
 
 def cleanup_orphaned_thumbnails():
@@ -936,15 +939,15 @@ def cleanup_orphaned_thumbnails():
                     try:
                         os.remove(thumb_path)
                         cleaned_count += 1
-                        print(f"Removed orphaned thumbnail: {thumb_file}")
+                        app_logger.debug(f"Removed orphaned thumbnail: {thumb_file}")
                     except Exception as e:
-                        print(f"Error removing thumbnail {thumb_file}: {e}")
+                        app_logger.error(f"Error removing thumbnail {thumb_file}: {e}")
         
         if cleaned_count > 0:
-            print(f"Cleaned {cleaned_count} orphaned thumbnails")
+            app_logger.info(f"Cleaned {cleaned_count} orphaned thumbnails")
     
     except Exception as e:
-        print(f"Error during thumbnail cleanup: {e}")
+        app_logger.error(f"Error during thumbnail cleanup: {e}")
 
 scheduler.add_job(
     func=cleanup_orphaned_thumbnails,

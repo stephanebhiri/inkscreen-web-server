@@ -11,3 +11,12 @@ class AppState:
         self.current_folder = ""
         self.current_image = ""
         self.manual_override = False
+        self.slideshow_state = {
+            'job_id': None,
+            'folder_path': '',
+            'current_image_name': None,
+            'loop_count': 0,
+            'images': [],
+            'settings': {}
+        }
+        self.thumbnail_call_count = 0
