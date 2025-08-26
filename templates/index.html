@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ink Screen Manager - Ultimate</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Cache buster timestamp: 2025-08-19-14-45 -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <button class="hamburger" id="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+    
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>Folders</h2>
+            <p class="sidebar-subtitle">Manage your image collections</p>
+            <button class="new-folder-btn" onclick="showNewFolderModal()">
+                <span>+</span>
+                New Folder
+            </button>
+        </div>
+        <div class="folders-container">
+            <div id="folderTree" class="folder-tree"></div>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="header">
+            <div class="breadcrumb" id="breadcrumb">
+                <a href="#" class="breadcrumb-item" onclick="loadFolder('')">Home</a>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                    📤 Upload Images
+                </button>
+                <button class="btn btn-secondary" onclick="showPlaylistSettings()">
+                    ⚙️ Settings
+                </button>
+                <button class="btn btn-success" id="playBtn" onclick="toggleSlideshow()">
+                    ▶️ Play
+                </button>
+                <button class="btn btn-danger" id="stopBtn" onclick="stopSlideshow()" style="display: none;">
+                    ⏹️ Stop
+                </button>
+                <button class="btn btn-secondary" onclick="refreshStatus()">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+        
+        <div class="status-bar" id="statusBar">
+            <div class="status-content">
+                <div class="status-item">
+                    <div class="status-indicator" id="statusIndicator"></div>
+                    <span id="statusText">Idle</span>
+                </div>
+                <div class="status-item">
+                    <span>🔁 Loop: <span id="loopStatus">Off</span></span>
+                </div>
+                <div class="status-item">
+                    <span>🔀 Shuffle: <span id="shuffleStatus">Off</span></span>
+                </div>
+                <div class="status-item">
+                    <span>🔢 <span id="playlistProgress">-</span></span>
+                </div>
+                <div class="status-item">
+                    <span>⏱️ Next in: <span id="nextChange">-</span></span>
+                <div class="status-item">
+                    <span>🔋 ESP32: <span id="esp32Battery">-</span></span>
+                </div>
+                <div class="status-item">
+                    <span>📶 WiFi: <span id="esp32WiFi">-</span></span>
+                </div>
+                </div>
+            </div>
+            <div class="now-playing" id="nowPlaying">
+                <div style="border-bottom: 1px solid rgba(102, 126, 234, 0.3); padding-bottom: 10px; margin-bottom: 15px;">
+                    <strong>Playing from:</strong> <span id="playingFolder" style="color: #667eea;">-</span>
+                </div>
+                <div class="playing-content">
+                    <div class="playing-item">
+                        <h4>Now Playing</h4>
+                        <img id="currentThumbnail" class="playing-thumbnail" src="" alt="Current">
+                        <div class="playing-name" id="currentImageName">-</div>
+                    </div>
+                    <div class="next-arrow">→</div>
+                    <div class="playing-item">
+                        <h4>Next</h4>
+                        <img id="nextThumbnail" class="playing-thumbnail" src="" alt="Next">
+                        <div class="playing-name" id="nextImageName">-</div>
+                        <button class="btn btn-primary" style="margin-top: 10px;" onclick="pushNextNow()">Push Next Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="upload-zone" id="uploadZone">
+            <h3>📸 Drop images here or click to upload</h3>
+            <p>Supported formats: JPG, PNG</p>
+            <div class="progress-bar" id="uploadProgress" style="display: none;">
+                <div class="progress-fill" id="uploadProgressFill">0%</div>
+            </div>
+        </div>
+        
+        <div class="image-grid" id="imageGrid"></div>
+    </div>
+    
+    <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+    
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        <div class="notification-content">
+            <span class="notification-icon" id="notificationIcon">✓</span>
+            <div class="notification-text">
+                <div class="notification-title" id="notificationTitle">Success</div>
+                <div class="notification-message" id="notificationMessage">Action completed</div>
+                <div class="notification-progress" id="notificationProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="notificationProgressFill">0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modals -->
+    <div class="modal" id="newFolderModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Folder</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Folder Name:</label>
+                    <input type="text" id="newFolderName" placeholder="Enter folder name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="createNewFolder()">Create</button>
+                <button class="btn btn-secondary" onclick="closeModal('newFolderModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Playlist Settings</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Interval (seconds):</label>
+                    <input type="number" id="intervalInput" min="1" value="300">
+                </div>
+                <div class="form-group">
+                    <label>Loop:</label>
+                    <div class="toggle-switch" id="loopToggle" onclick="toggleSwitch(this)"></div>
+                </div>
+                <div class="form-group">
+                    <label>Shuffle:</label>
+                    <div class="toggle-switch" id="shuffleToggle" onclick="toggleSwitch(this)"></div>
+                </div>
+                <div class="form-group">
+                    <label>Description:</label>
+                    <textarea id="descriptionInput" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="savePlaylistSettings()">Save</button>
+                <button class="btn btn-secondary" onclick="closeModal('settingsModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="moveModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Move Image</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Destination Folder:</label>
+                    <select id="destinationFolder"></select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="confirmMove()">Move</button>
+                <button class="btn btn-secondary" onclick="closeModal('moveModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
