@@ -52,6 +52,14 @@ IMAGE_PATH = BASE_FOLDER
 current_folder = ""
 current_image = ""
 manual_override = False  # When True, use manual selection instead of playlist
+# ESP32 Device Stats
+esp32_stats = {
+    "battery": -1,
+    "rssi": 0,
+    "heap": 0,
+    "uptime": 0,
+    "last_seen": None
+}
 
 class PushJob:
     def __init__(self, job_id, image_name, image_path):
@@ -1601,6 +1609,12 @@ def index():
                 </div>
                 <div class="status-item">
                     <span>⏱️ Next in: <span id="nextChange">-</span></span>
+                <div class="status-item">
+                    <span>🔋 ESP32: <span id="esp32Battery">-</span></span>
+                </div>
+                <div class="status-item">
+                    <span>📶 WiFi: <span id="esp32WiFi">-</span></span>
+                </div>
                 </div>
             </div>
             <div class="now-playing" id="nowPlaying">
@@ -1824,6 +1838,32 @@ def index():
                         }, 150);
                     }
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
             });
         }
 
@@ -1866,6 +1906,32 @@ def index():
                 .then(data => {
                     const tree = document.getElementById('folderTree');
                     tree.innerHTML = renderFolderTree(data.tree);
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
         }
         
@@ -1922,6 +1988,32 @@ def index():
                 .then(data => {
                     renderImages(data.images, data.playlist);
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
             
             // Refresh folder tree
             loadFolderTree();
@@ -1974,6 +2066,32 @@ def index():
                     item.classList.add('dragging');
                     e.dataTransfer.effectAllowed = 'move';
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
                 
                 item.addEventListener('dragend', () => {
                     item.classList.remove('dragging');
@@ -1982,6 +2100,32 @@ def index():
                         item.classList.remove('drag-over', 'drag-over-left', 'drag-over-right')
                     );
                     draggedElement = null;
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
                 
                 item.addEventListener('dragover', (e) => {
@@ -2001,9 +2145,61 @@ def index():
                         }
                     }
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
                 
                 item.addEventListener('dragleave', () => {
                     item.classList.remove('drag-over', 'drag-over-left', 'drag-over-right');
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
                 
                 item.addEventListener('drop', (e) => {
@@ -2011,6 +2207,32 @@ def index():
                     item.classList.remove('drag-over', 'drag-over-left', 'drag-over-right');
                     dropX = e.clientX; // Store drop coordinates
                     handleDrop(item);
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
                 
                 // Touch events for mobile
@@ -2148,10 +2370,13 @@ def index():
             // Poll every 2 seconds
             statusTimer = setInterval(updateStatus, 2000);
             updateStatus();
+                    setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
         }
         
         function updateStatus() {
             fetch('/api/slideshow/status')
+
                 .then(r => r.json())
                 .then(status => {
                     const indicator = document.getElementById('statusIndicator');
@@ -2251,6 +2476,32 @@ def index():
                         }
                     }
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
         }
         
         function toggleSlideshow() {
@@ -2263,6 +2514,8 @@ def index():
                 if (data.success) {
                     showNotification('Slideshow Started', `Now playing from ${currentFolder || 'Root'}`, 'success');
                     updateStatus();
+                    setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
                 } else {
                     showNotification('Start Failed', 'Unable to start slideshow', 'error');
                 }
@@ -2278,6 +2531,8 @@ def index():
                 if (data.success) {
                     showNotification('Slideshow Stopped', 'Playback has been stopped', 'success');
                     updateStatus();
+                    setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
                 }
             });
         }
@@ -2324,6 +2579,8 @@ def index():
                 if (data.success) {
                     showNotification('Current Image Set', `${imageName} will display on next ESP32 poll`, 'success');
                     updateStatus();
+                    setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
                 } else {
                     showNotification('Failed', data.error || 'Unable to set current image', 'error');
                 }
@@ -2361,6 +2618,7 @@ def index():
                 if (data.success) {
                     showNotification('Next Image Pushed!', data.pushed || 'Skipped to next image', 'success');
                     setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
                 } else {
                     showNotification('Skip Failed', data.error || 'Unable to skip', 'error');
                 }
@@ -2376,6 +2634,32 @@ def index():
                     method: 'DELETE'
                 }).then(() => {
                     loadFolder(currentFolder);
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
             }
         }
@@ -2467,6 +2751,32 @@ def index():
                     } else {
                         alert('Failed to delete folder');
                     }
+                });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
                 });
             }
         }
@@ -2560,6 +2870,32 @@ def index():
                     document.getElementById('descriptionInput').value = data.playlist.description || '';
                     document.getElementById('settingsModal').classList.add('show');
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
         }
         
         function savePlaylistSettings() {
@@ -2605,6 +2941,32 @@ def index():
                     addFolders(data.tree);
                     document.getElementById('moveModal').classList.add('show');
                 });
+
+            // Update ESP32 stats
+            fetch('/api/esp32/stats')
+                .then(r => r.json())
+                .then(stats => {
+                    const battery = document.getElementById('esp32Battery');
+                    const wifi = document.getElementById('esp32WiFi');
+                    
+                    if (stats.battery >= 0) {
+                        let batteryIcon = stats.battery > 20 ? '🔋' : '🪫';
+                        battery.innerHTML = `${batteryIcon} ${stats.battery}%`;
+                    } else {
+                        battery.innerHTML = '🔌 USB';
+                    }
+                    
+                    if (stats.rssi) {
+                        let signal = stats.rssi > -50 ? '📶' : stats.rssi > -70 ? '📶' : '📶';
+                        wifi.innerHTML = `${signal} ${stats.rssi}dBm`;
+                    } else {
+                        wifi.innerHTML = '📶 -';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('esp32Battery').innerHTML = '-';
+                    document.getElementById('esp32WiFi').innerHTML = '-';
+                });
         }
         
         function confirmMove() {
@@ -2635,6 +2997,8 @@ def index():
         function refreshStatus() {
             loadFolder(currentFolder);
             updateStatus();
+                    setTimeout(updateStatus, 500);
+                    setTimeout(updateStatus, 1500);
         }
     </script>
 </body>
@@ -3077,6 +3441,16 @@ def api_push_status(job_id):
 def api_image_info():
     """Get current image hash and metadata for change detection"""
     global current_folder, current_image, slideshow_state, manual_override
+
+    # Capture ESP32 device stats if provided
+    global esp32_stats
+    if request.args.get("battery"):
+        esp32_stats["battery"] = int(request.args.get("battery", -1))
+        esp32_stats["rssi"] = int(request.args.get("rssi", 0))
+        esp32_stats["heap"] = int(request.args.get("heap", 0))
+        esp32_stats["uptime"] = int(request.args.get("uptime", 0))
+        esp32_stats["last_seen"] = datetime.now().strftime("%H:%M:%S")
+        print("[ESP32] Battery:", esp32_stats["battery"], "% | RSSI:", esp32_stats["rssi"], "dBm | Heap:", esp32_stats["heap"], "B | Uptime:", esp32_stats["uptime"], "s")
     try:
         # Priority 1: Manual override - use Set Current selection even if playlist is running
         if manual_override and current_image:
@@ -3443,11 +3817,19 @@ def api_refresh_thumbnails(folder_path=''):
     })
 
 @app.route('/api/slideshow/status')
+
 @auth.login_required
 def api_slideshow_status():
     return jsonify(SlideshowManager.get_status())
 
-@app.route('/api/scheduler/jobs')
+@app.route('/api/esp32/stats')
+@auth.login_required
+def api_esp32_stats():
+    """Get ESP32 device stats"""
+    global esp32_stats
+    return jsonify(esp32_stats)
+    return jsonify(SlideshowManager.get_status())
+
 @auth.login_required
 def api_scheduler_jobs():
     """Get list of scheduled jobs"""
