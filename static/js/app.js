@@ -351,7 +351,10 @@ function setupUploadZone() {
     const dropPill = document.getElementById('dropPill');
     let dragDepth = 0;
     
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    fileInput.addEventListener('change', (e) => {
+        console.log('File input changed, files:', e.target.files.length);
+        handleFiles(e.target.files);
+    });
 
     // Global overlay for drag & drop anywhere
     window.addEventListener('dragenter', (e) => {
@@ -523,6 +526,7 @@ function updatePlaylistOrder() {
 }
 
 function handleFiles(files) {
+    console.log('handleFiles called with', files.length, 'files:', Array.from(files).map(f => f.name));
     const formData = new FormData();
     let fileCount = 0;
     
@@ -541,6 +545,7 @@ function handleFiles(files) {
     progressBar.style.display = 'block';
     
     const xhr = new XMLHttpRequest();
+    xhr.withCredentials = true;
     
     xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
@@ -551,16 +556,26 @@ function handleFiles(files) {
     });
     
     xhr.addEventListener('load', () => {
+        console.log('Upload completed. Status:', xhr.status, 'Response:', xhr.responseText);
         progressBar.style.display = 'none';
         if (xhr.status === 200) {
             const response = JSON.parse(xhr.responseText);
+            console.log('Upload successful:', response);
             showNotification('Upload Complete', `${response.uploaded.length} images uploaded`, 'success');
         } else {
+            console.log('Upload failed with status:', xhr.status);
             showNotification('Upload Failed', 'Error uploading images', 'error');
         }
         loadFolder(currentFolder);
     });
     
+    xhr.addEventListener('error', () => {
+        console.log('Upload error occurred');
+        progressBar.style.display = 'none';
+        showNotification('Upload Failed', 'Network error during upload', 'error');
+    });
+    
+    console.log('Starting upload to:', `/api/upload/${encodeURIComponent(currentFolder)}`);
     xhr.open('POST', `/api/upload/${encodeURIComponent(currentFolder)}`);
     xhr.send(formData);
 }

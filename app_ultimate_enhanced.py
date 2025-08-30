@@ -133,6 +133,11 @@ def async_push_with_feedback(job_id, image_path, app_state):
 
 @auth.verify_password
 def verify_password(username, password):
+    # Check if user is already authenticated via session
+    if 'username' in session and session['username'] in users:
+        return session['username']
+    
+    # Check HTTP Basic Auth credentials
     if username in users and check_password_hash(users.get(username), password):
         session['username'] = username
         return username

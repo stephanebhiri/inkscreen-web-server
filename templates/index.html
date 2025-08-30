@@ -35,7 +35,7 @@
                 <a href="#" class="breadcrumb-item" onclick="loadFolder('')">Home</a>
             </div>
             <div class="controls">
-                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                <button class="btn btn-primary" onclick="console.log('Upload button clicked'); document.getElementById('fileInput').click();">
                     📤 Upload Images
                 </button>
                 <div class="drop-pill" id="dropPill" title="Drop files or click to upload" onclick="document.getElementById('fileInput').click()">
@@ -124,6 +124,14 @@
     </div>
     
     <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+    
+    <!-- Upload Progress -->
+    <div class="upload-progress" id="uploadProgress" style="display: none; position: fixed; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000;">
+        <div style="margin-bottom: 8px; font-weight: 500;">Uploading images...</div>
+        <div class="progress-bar" style="width: 200px; height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden;">
+            <div class="progress-fill" id="uploadProgressFill" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 10px; text-align: center; line-height: 20px; color: white; font-size: 12px; font-weight: 500; transition: width 0.3s;">0%</div>
+        </div>
+    </div>
     
     <!-- Notification -->
     <div class="notification" id="notification">
