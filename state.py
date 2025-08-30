@@ -20,3 +20,8 @@ class AppState:
             'settings': {}
         }
         self.thumbnail_call_count = 0
+        self.cleanup_stats = {
+            'last_run': None,
+            'orphaned_cleaned': 0,
+            'dynamic_cleaned': 0
+        }

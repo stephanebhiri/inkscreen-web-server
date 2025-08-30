@@ -169,6 +169,7 @@ body {
     flex: 1;
     padding: 16px 0;
     overflow-y: auto;
+    min-height: 0;
 }
 
 .folder-tree {
@@ -315,7 +316,7 @@ body {
     padding: 20px;
     border-radius: 15px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
 .breadcrumb {
@@ -345,6 +346,41 @@ body {
     flex-wrap: wrap;
     align-items: center;
 }
+
+.drop-pill {
+    border: 2px dashed #94a3b8;
+    color: #475569;
+    background: rgba(241,245,249,0.8);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.drop-pill:hover {
+    background: rgba(226,232,240,0.9);
+}
+
+.drop-pill.dragover {
+    border-color: #667eea;
+    background: rgba(102,126,234,0.12);
+    color: #3730a3;
+}
+
+.health-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #9ca3af; /* unknown */
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.05) inset;
+    vertical-align: middle;
+}
+
+.health-ok { background: #22c55e; }
+.health-warn { background: #f59e0b; }
+.health-bad { background: #ef4444; }
 
 .btn {
     padding: 10px 20px;
@@ -404,7 +440,7 @@ body {
     background: rgba(255, 255, 255, 0.95);
     padding: 15px;
     border-radius: 10px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
 .status-content {
@@ -504,13 +540,13 @@ body {
 /* Upload Zone */
 .upload-zone {
     background: rgba(255, 255, 255, 0.95);
-    border: 3px dashed #667eea;
-    border-radius: 15px;
-    padding: 40px;
+    border: 2px dashed #667eea;
+    border-radius: 12px;
+    padding: 24px;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
 .upload-zone:hover, .upload-zone.dragover {
@@ -518,14 +554,49 @@ body {
     border-color: #764ba2;
 }
 
+/* Fullscreen Drop Overlay */
+.drop-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.drop-overlay-inner {
+    background: rgba(255,255,255,0.95);
+    border: 3px dashed #667eea;
+    border-radius: 16px;
+    padding: 40px 60px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.drop-icon { font-size: 48px; margin-bottom: 8px; }
+.drop-title { font-size: 20px; font-weight: 600; color: #334155; }
+.drop-subtitle { font-size: 14px; color: #64748b; margin-top: 6px; }
+
 /* Image Grid */
 .image-grid {
-    display: grid !important;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
-    gap: 15px !important;
-    padding: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-auto-rows: auto;
+    grid-auto-flow: row dense; /* pack rows tightly without gaps */
+    gap: 16px;
+    padding: 16px;
     background: rgba(255, 255, 255, 0.95);
-    border-radius: 15px;
+    border-radius: 12px;
+    width: 100%;
+    place-content: start;    /* pack rows to the top-left without large gaps */
+    align-items: start;
+    justify-items: stretch;
+    margin-top: 8px; /* ensure it never overlaps the sections above */
 }
 
 .image-item {
@@ -536,6 +607,9 @@ body {
     transition: all 0.3s;
     cursor: grab;
     position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
 .image-item.dragging {
@@ -804,11 +878,7 @@ body {
         font-size: 20px;
     }
     
-    .image-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 15px;
-        padding: 15px;
-    }
+    .image-grid { gap: 12px; padding: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     
     .image-item img {
         height: 120px;
@@ -845,9 +915,7 @@ body {
 
 /* Tablet */
 @media (min-width: 769px) and (max-width: 1024px) {
-    .image-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
+    .image-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     
     .sidebar {
         width: 250px;

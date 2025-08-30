@@ -19,6 +19,10 @@ instance/
 uploads/
 playlists/
 thumbnails/
+logs/
+build/
+dist/
+*.egg-info/
 
 # Logs
 *.log

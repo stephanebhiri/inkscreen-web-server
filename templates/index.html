@@ -5,7 +5,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- Cache buster timestamp: 2025-08-19-14-45 -->
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ asset_v }}">
+    <link rel="stylesheet" href="/static/css/style_responsive.css?v={{ asset_v }}">
 </head>
 <body>
     <button class="hamburger" id="hamburger">
@@ -37,6 +38,9 @@
                 <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
                     📤 Upload Images
                 </button>
+                <div class="drop-pill" id="dropPill" title="Drop files or click to upload" onclick="document.getElementById('fileInput').click()">
+                    ⇪ Drop Here
+                </div>
                 <button class="btn btn-secondary" onclick="showPlaylistSettings()">
                     ⚙️ Settings
                 </button>
@@ -48,6 +52,9 @@
                 </button>
                 <button class="btn btn-secondary" onclick="refreshStatus()">
                     🔄 Refresh
+                </button>
+                <button class="btn btn-secondary" onclick="refreshThumbnails(currentFolder)">
+                    🧹 Refresh Thumbnails
                 </button>
             </div>
         </div>
@@ -69,12 +76,18 @@
                 </div>
                 <div class="status-item">
                     <span>⏱️ Next in: <span id="nextChange">-</span></span>
+                </div>
                 <div class="status-item">
                     <span>🔋 ESP32: <span id="esp32Battery">-</span></span>
                 </div>
                 <div class="status-item">
                     <span>📶 WiFi: <span id="esp32WiFi">-</span></span>
                 </div>
+                <div class="status-item">
+                    <span>🖥️ Server: <span class="health-dot" id="healthIndicator" title="Unknown"></span></span>
+                </div>
+                <div class="status-item" title="Last cleanup dynamic count">
+                    <span>🧹 Dyn: <span id="dynamicCleanedCount">-</span></span>
                 </div>
             </div>
             <div class="now-playing" id="nowPlaying">
@@ -98,11 +111,12 @@
             </div>
         </div>
         
-        <div class="upload-zone" id="uploadZone">
-            <h3>📸 Drop images here or click to upload</h3>
-            <p>Supported formats: JPG, PNG</p>
-            <div class="progress-bar" id="uploadProgress" style="display: none;">
-                <div class="progress-fill" id="uploadProgressFill">0%</div>
+        <!-- Global Drag & Drop Overlay -->
+        <div id="dropOverlay" class="drop-overlay" style="display:none;">
+            <div class="drop-overlay-inner">
+                <div class="drop-icon">📤</div>
+                <div class="drop-title">Drop images to upload</div>
+                <div class="drop-subtitle">JPG and PNG supported</div>
             </div>
         </div>
         
@@ -194,6 +208,6 @@
         </div>
     </div>
     
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{ asset_v }}"></script>
 </body>
 </html>

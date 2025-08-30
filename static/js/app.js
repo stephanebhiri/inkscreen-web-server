@@ -74,6 +74,48 @@ function updateEsp32Stats() {
         });
 }
 
+// --- Health Check ---
+function updateHealth() {
+    fetch('/healthz')
+        .then(r => r.json())
+        .then(h => {
+            const dot = document.getElementById('healthIndicator');
+            dot.classList.remove('health-ok', 'health-bad', 'health-warn');
+            if (h.ok) {
+                dot.classList.add('health-ok');
+                dot.title = 'OK';
+            } else {
+                dot.classList.add('health-bad');
+                dot.title = h.error || 'Not OK';
+            }
+        })
+        .catch(() => {
+            const dot = document.getElementById('healthIndicator');
+            dot.classList.remove('health-ok', 'health-warn');
+            dot.classList.add('health-bad');
+            dot.title = 'Unavailable';
+        });
+}
+
+// --- Cleanup Stats ---
+function updateCleanupStats() {
+    fetch('/api/thumbnails/cleanup_stats')
+        .then(r => r.json())
+        .then(stats => {
+            const el = document.getElementById('dynamicCleanedCount');
+            if (!el) return;
+            const val = typeof stats.dynamic_cleaned === 'number' ? stats.dynamic_cleaned : '-';
+            el.textContent = val;
+            if (stats.last_run) {
+                el.title = `Last run: ${stats.last_run}`;
+            }
+        })
+        .catch(() => {
+            const el = document.getElementById('dynamicCleanedCount');
+            if (el) el.textContent = '-';
+        });
+}
+
 // --- Slideshow and Status ---
 
 function startStatusPolling() {
@@ -89,6 +131,8 @@ function updateStatus() {
             updateNowPlayingUI(status);
         });
     updateEsp32Stats();
+    updateHealth();
+    updateCleanupStats();
 }
 
 function updateSlideshowStatusUI(status) {
@@ -149,6 +193,7 @@ function updateNowPlayingUI(status) {
         const currentImageName = document.getElementById('currentImageName');
         if (status.current_image) {
             const currentPath = status.current_folder ? `${status.current_folder}/${status.current_image}` : status.current_image;
+            currentThumbnail.loading = 'lazy';
             currentThumbnail.src = `/api/thumbnail/${encodeURIComponent(currentPath)}?w=200&q=85`;
             currentImageName.textContent = status.current_image;
             currentThumbnail.onclick = () => pushImageDirect(currentPath);
@@ -158,6 +203,7 @@ function updateNowPlayingUI(status) {
         const nextImageName = document.getElementById('nextImageName');
         if (status.next_image) {
             const nextPath = status.current_folder ? `${status.current_folder}/${status.next_image}` : status.next_image;
+            nextThumbnail.loading = 'lazy';
             nextThumbnail.src = `/api/thumbnail/${encodeURIComponent(nextPath)}?w=200&q=85`;
             nextImageName.textContent = status.next_image;
             nextThumbnail.onclick = () => pushImageDirect(nextPath);
@@ -286,42 +332,70 @@ function setupMobileInteractions() {
         toggleSidebar();
     });
     
-    // Auto-close sidebar after navigation on mobile
-    const folderItems = sidebar.querySelectorAll('.folder-item');
-    folderItems.forEach(item => {
-        item.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
-                setTimeout(() => {
-                    sidebar.classList.remove('open');
-                    hamburger.classList.remove('active');
-                }, 150);
-            }
-        });
+    // Auto-close via event delegation so it works after re-render
+    sidebar.addEventListener('click', function(e) {
+        const itemContent = e.target.closest('.folder-item-content');
+        if (itemContent && window.innerWidth <= 768) {
+            setTimeout(() => {
+                sidebar.classList.remove('open');
+                hamburger.classList.remove('active');
+            }, 150);
+        }
     });
     updateEsp32Stats();
 }
 
 function setupUploadZone() {
-    const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');
-    
-    uploadZone.addEventListener('click', () => fileInput.click());
-    
-    ['dragover', 'dragleave', 'drop'].forEach(eventName => {
-        uploadZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-    });
-
-    uploadZone.addEventListener('dragover', () => uploadZone.classList.add('dragover'));
-    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-    uploadZone.addEventListener('drop', (e) => {
-        uploadZone.classList.remove('dragover');
-        handleFiles(e.dataTransfer.files);
-    });
+    const dropOverlay = document.getElementById('dropOverlay');
+    const dropPill = document.getElementById('dropPill');
+    let dragDepth = 0;
     
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // Global overlay for drag & drop anywhere
+    window.addEventListener('dragenter', (e) => {
+        dragDepth++;
+        if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+            dropOverlay.style.display = 'flex';
+            if (dropPill) dropPill.classList.add('dragover');
+        }
+    });
+    window.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) {
+            dropOverlay.style.display = 'none';
+            if (dropPill) dropPill.classList.remove('dragover');
+        }
+    });
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropOverlay.style.display = 'none';
+        dragDepth = 0;
+        if (dropPill) dropPill.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+            handleFiles(e.dataTransfer.files);
+        }
+    });
+
+    if (dropPill) {
+        ['dragover','dragleave','drop'].forEach(evt => {
+            dropPill.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (evt === 'dragover') dropPill.classList.add('dragover');
+                if (evt === 'dragleave' || evt === 'drop') dropPill.classList.remove('dragover');
+            });
+        });
+        dropPill.addEventListener('drop', (e) => {
+            if (e.dataTransfer && e.dataTransfer.files) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+    }
 }
 
 function loadFolderTree() {
@@ -407,10 +481,19 @@ function renderImages(images, playlist) {
         return aIndex - bIndex;
     });
     
+    if (sortedImages.length === 0) {
+        grid.innerHTML = `
+            <div style="text-align:center; padding: 30px; color:#64748b;">
+                <div style="font-size:40px;">🗂️</div>
+                <div style="margin-top:8px; font-weight:600;">This folder is empty</div>
+                <div style="margin-top:6px;">Click <strong>Upload Images</strong> or drop files anywhere</div>
+            </div>`;
+        return;
+    }
     grid.innerHTML = sortedImages.map((img, index) => `
         <div class="image-item" draggable="true" data-image="${img.name}" data-index="${index}">
             <div class="order-badge">#${index + 1}</div>
-            <img src="/api/thumbnail/${encodeURIComponent(currentFolder + '/' + img.name)}?w=300&q=80" alt="${img.name}">
+            <img loading="lazy" src="/api/thumbnail/${encodeURIComponent((currentFolder ? currentFolder + '/' : '') + img.name)}?w=300&q=80" alt="${img.name}">
             <div class="image-info">
                 <div class="image-name" title="${img.name}">${img.name}</div>
                 <div class="image-actions">
@@ -575,7 +658,8 @@ function pushNextNow() {
 
 function deleteImage(imageName) {
     if (confirm(`Delete ${imageName}?`)) {
-        fetch(`/api/image/${encodeURIComponent(currentFolder + '/' + imageName)}`, {
+        const path = (currentFolder ? currentFolder + '/' : '') + imageName;
+        fetch(`/api/image/${encodeURIComponent(path)}`, {
             method: 'DELETE'
         }).then(() => {
             loadFolder(currentFolder);
@@ -585,7 +669,7 @@ function deleteImage(imageName) {
 }
 
 function refreshThumbnails(folderPath) {
-    showNotification('Refreshing thumbnails...', 'progress');
+    showNotification('Refreshing thumbnails...', 'Regenerating thumbnails…', 'progress');
     
     const url = folderPath 
         ? `/api/thumbnails/refresh/${encodeURIComponent(folderPath)}` 
@@ -597,7 +681,7 @@ function refreshThumbnails(folderPath) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showNotification(`✅ Regenerated ${data.regenerated} thumbnails`, 'success');
+            showNotification('Thumbnails Refreshed', `✅ Regenerated ${data.regenerated} thumbnails`, 'success');
             // Reload current folder to show new thumbnails
             loadFolder(currentFolder);
         } else {

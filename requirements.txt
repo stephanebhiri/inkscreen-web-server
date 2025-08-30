@@ -11,6 +11,9 @@ python-dotenv==1.0.1
 # Image Processing
 Pillow==10.4.0
 
+# Numeric processing for dithering
+numpy==2.1.1
+
 # Task Scheduling
 APScheduler==3.10.4
 

@@ -2,16 +2,13 @@
 # Inkscreen Web - E-Paper Display Manager
 
 import os
-import json
 import shutil
 import subprocess
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import (
     Flask,
@@ -74,6 +71,9 @@ playlist_manager = PlaylistManager(BASE_FOLDER)
 folder_manager = FolderManager(BASE_FOLDER, THUMBNAILS_FOLDER)
 slideshow_manager = SlideshowManager(scheduler, BASE_FOLDER, app_state)
 
+# Ensure required folders exist at startup (even under WSGI)
+folder_manager.ensure_base_folder()
+
 
 def async_push_with_feedback(job_id, image_path, app_state):
     """Push image asynchronously with real-time feedback"""
@@ -84,10 +84,11 @@ def async_push_with_feedback(job_id, image_path, app_state):
     try:
         job.update('dithering', 10, 'Loading and dithering image...')
         
+        host = os.getenv('ESP32_HOST') or os.getenv('ESP32_IP') or '192.168.1.100'
         process = subprocess.Popen([
             os.getenv('PUSH_SCRIPT', './push_epaper_sierra_sorbet_fast.py'),
             image_path,
-            '--host', os.getenv('ESP32_HOST', '192.168.1.100')
+            '--host', host
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         
         while True:
@@ -158,6 +159,8 @@ def detect_optimal_format(accept_header):
 
 def create_optimized_thumbnail(image_path, thumb_path, format='jpeg', quality=85, size=(150, 150)):
     try:
+        # Ensure destination directory exists
+        os.makedirs(os.path.dirname(thumb_path) or '.', exist_ok=True)
         img = Image.open(image_path)
         img = ImageOps.exif_transpose(img)
         
@@ -241,10 +244,12 @@ def check_storage_and_cleanup():
             except Exception as e:
                 app_logger.error(f"Error removing file: {e}")
 
+ASSET_VERSION = os.getenv('ASSET_V') or str(int(time.time()))
+
 @app.route('/')
 @auth.login_required
 def index():
-    return render_template('index.html')
+    return render_template('index.html', asset_v=ASSET_VERSION)
 
 @app.route('/api/folders')
 @auth.login_required
@@ -310,7 +315,7 @@ def api_get_playlist(folder_path=''):
     
     return jsonify({'playlist': playlist, 'images': images})
 
-@app.route('/api/playlist//order', methods=['POST'])
+@app.route('/api/playlist/order', methods=['POST'])
 @app.route('/api/playlist/<path:folder_path>/order', methods=['POST'])
 @auth.login_required
 def api_update_order(folder_path=''):
@@ -323,7 +328,7 @@ def api_update_order(folder_path=''):
     playlist = playlist_manager.update_order(full_path, new_order)
     return jsonify({'success': True, 'playlist': playlist})
 
-@app.route('/api/playlist//settings', methods=['POST'])
+@app.route('/api/playlist/settings', methods=['POST'])
 @app.route('/api/playlist/<path:folder_path>/settings', methods=['POST'])
 @auth.login_required
 def api_update_settings(folder_path=''):
@@ -348,6 +353,7 @@ def api_upload(folder_path=''):
     folder_path = folder_path or ''
     full_path = os.path.join(BASE_FOLDER, folder_path)
     os.makedirs(full_path, exist_ok=True)
+    os.makedirs(THUMBNAILS_FOLDER, exist_ok=True)
     
     check_storage_and_cleanup()
     
@@ -372,7 +378,7 @@ def api_upload(folder_path=''):
             
             resize_large_image(file_path)
             
-            thumb_name = f"{folder_path.replace('/', '_')}_{os.path.splitext(filename)[0]}_thumb.jpg"
+            thumb_name = f"{folder_path.replace('/', '_')}_{os.path.splitext(filename)[0]}_thumb.jpg" if folder_path else f"{os.path.splitext(filename)[0]}_thumb.jpg"
             thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_name)
             create_thumbnail(file_path, thumb_path)
             
@@ -385,12 +391,19 @@ def api_upload(folder_path=''):
 # thumbnail_call_count moved to AppState
 
 @app.route('/api/thumbnail/<path:image_path>')
+@auth.login_required
 def api_get_thumbnail(image_path):
     app_state.thumbnail_call_count += 1
     
     accept_header = request.headers.get('Accept', '')
-    quality = int(request.args.get('q', '85'))
-    width = int(request.args.get('w', '300'))
+    try:
+        quality = int(request.args.get('q', '85'))
+        width = int(request.args.get('w', '300'))
+    except ValueError:
+        quality, width = 85, 300
+    # Clamp to sane bounds
+    quality = max(50, min(95, quality))
+    width = max(50, min(800, width))
     
     optimal_format = detect_optimal_format(accept_header)
     
@@ -417,6 +430,8 @@ def api_get_thumbnail(image_path):
             need_regenerate = True
     
     if need_regenerate:
+        # Ensure thumbnails folder exists before writing
+        os.makedirs(THUMBNAILS_FOLDER, exist_ok=True)
         thumbnail_size = (width, width)
         success = create_optimized_thumbnail(
             full_image_path, 
@@ -456,6 +471,19 @@ def api_delete_image(image_path):
         thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_name)
         if os.path.exists(thumb_path):
             os.remove(thumb_path)
+        # Also remove any dynamic thumbnails for this image (width/quality variants)
+        try:
+            base_no_ext = os.path.splitext(filename)[0]
+            prefix = f"{folder_parts}_{base_no_ext}_w" if folder_parts else f"{base_no_ext}_w"
+            if os.path.isdir(THUMBNAILS_FOLDER):
+                for f in os.listdir(THUMBNAILS_FOLDER):
+                    if f.startswith(prefix):
+                        try:
+                            os.remove(os.path.join(THUMBNAILS_FOLDER, f))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         
         folder_path = os.path.dirname(full_path)
         playlist_manager.update_order(folder_path)
@@ -837,7 +865,7 @@ def api_slideshow_next():
     status = slideshow_manager.get_status()
     if status.get('running'):
         try:
-            slideshow_manager.push_next_image()
+            slideshow_manager.push_next_image(manual_trigger=True)
             return jsonify({'success': True, 'message': 'Advanced to next image'})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -896,6 +924,7 @@ def api_slideshow_status():
 def api_esp32_stats():
     return jsonify(app_state.esp32_stats)
 
+@app.route('/api/scheduler/jobs')
 @auth.login_required
 def api_scheduler_jobs():
     jobs = []
@@ -921,6 +950,7 @@ def cleanup_orphaned_thumbnails():
             return
         
         cleaned_count = 0
+        old_dynamic_cleaned = 0
         
         existing_images = set()
         for root, dirs, files in os.walk(BASE_FOLDER):
@@ -942,9 +972,24 @@ def cleanup_orphaned_thumbnails():
                         app_logger.debug(f"Removed orphaned thumbnail: {thumb_file}")
                     except Exception as e:
                         app_logger.error(f"Error removing thumbnail {thumb_file}: {e}")
+            # Also trim dynamic variants older than 14 days to control growth
+            elif '_w' in thumb_file and '_q' in thumb_file:
+                thumb_path = os.path.join(THUMBNAILS_FOLDER, thumb_file)
+                try:
+                    mtime = os.path.getmtime(thumb_path)
+                    # 14 days in seconds
+                    if (time.time() - mtime) > 14 * 24 * 3600:
+                        os.remove(thumb_path)
+                        old_dynamic_cleaned += 1
+                except Exception as e:
+                    app_logger.error(f"Error evaluating dynamic thumbnail {thumb_file}: {e}")
         
-        if cleaned_count > 0:
-            app_logger.info(f"Cleaned {cleaned_count} orphaned thumbnails")
+        # Update state
+        app_state.cleanup_stats['last_run'] = datetime.now().isoformat()
+        app_state.cleanup_stats['orphaned_cleaned'] = cleaned_count
+        app_state.cleanup_stats['dynamic_cleaned'] = old_dynamic_cleaned
+        if cleaned_count > 0 or old_dynamic_cleaned > 0:
+            app_logger.info(f"Cleaned {cleaned_count} orphaned, {old_dynamic_cleaned} old dynamic thumbnails")
     
     except Exception as e:
         app_logger.error(f"Error during thumbnail cleanup: {e}")
@@ -957,6 +1002,27 @@ scheduler.add_job(
     name='Cleanup orphaned thumbnails',
     replace_existing=True
 )
+
+@app.route('/healthz')
+def healthz():
+    try:
+        # Basic checks: folders exist and scheduler is running
+        base_ok = os.path.isdir(BASE_FOLDER)
+        thumbs_ok = os.path.isdir(THUMBNAILS_FOLDER)
+        sched_ok = scheduler.running
+        return jsonify({
+            'ok': base_ok and thumbs_ok and sched_ok,
+            'base_folder': base_ok,
+            'thumbnails_folder': thumbs_ok,
+            'scheduler_running': sched_ok
+        }), 200
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/api/thumbnails/cleanup_stats')
+@auth.login_required
+def api_cleanup_stats():
+    return jsonify(app_state.cleanup_stats)
 
 if __name__ == '__main__':
     folder_manager.ensure_base_folder()

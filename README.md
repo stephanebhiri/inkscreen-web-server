@@ -56,7 +56,8 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-secure-password
 
 # Legacy TCP Push settings (optional)
-ESP32_IP=192.168.1.49
+# Server accepts either ESP32_HOST or ESP32_IP
+ESP32_HOST=192.168.1.49
 ESP32_PORT=3333
 PUSH_SCRIPT=./push_epaper_sierra_sorbet_fast.py
 ```
@@ -68,6 +69,7 @@ For ESP32 HTTP polling architecture:
 - `GET /api/image/info` - Returns current image hash and metadata
 - `GET /api/image/stream` - Streams binary image data (300 bytes per line)
 - `POST /api/set_current` - Set current image (manual override)
+- `GET /healthz` - Health check (folders + scheduler status)
 
 ## ESP32 Compatibility
 

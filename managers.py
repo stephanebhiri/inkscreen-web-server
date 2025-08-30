@@ -118,7 +118,17 @@ class FolderManager:
         os.makedirs(self.thumbnails_folder, exist_ok=True)
     
     def create_folder(self, path):
-        full_path = os.path.join(self.base_folder, path.strip('/'))
+        candidate = path.strip('/')
+        # Basic validation: disallow reserved/special characters in any segment
+        invalid_chars = set('/\\:*?"<>|')
+        for segment in [p for p in candidate.split('/') if p]:
+            if any(ch in invalid_chars for ch in segment):
+                return False
+        # Normalize and ensure within base_folder (prevent traversal)
+        full_path = os.path.normpath(os.path.join(self.base_folder, candidate))
+        base_abs = os.path.abspath(self.base_folder)
+        if not os.path.abspath(full_path).startswith(base_abs):
+            return False
         os.makedirs(full_path, exist_ok=True)
         self.playlist_manager.update_order(full_path)
         return True
@@ -180,10 +190,28 @@ class FolderManager:
             self.playlist_manager.update_order(os.path.dirname(from_path))
             self.playlist_manager.update_order(os.path.dirname(to_path))
             
-            thumb_from = os.path.join(self.thumbnails_folder, f"{os.path.splitext(image_path)[0]}_thumb.jpg")
-            thumb_to = os.path.join(self.thumbnails_folder, f"{to_folder}_{os.path.splitext(image_path)[0]}_thumb.jpg")
+            # Keep thumbnail naming consistent with upload/delete conventions
+            base_name_no_ext = os.path.splitext(image_path)[0]
+            from_prefix = from_folder.strip('/').replace('/', '_')
+            to_prefix = to_folder.strip('/').replace('/', '_')
+            thumb_from_name = (
+                f"{from_prefix}_{base_name_no_ext}_thumb.jpg" if from_prefix else f"{base_name_no_ext}_thumb.jpg"
+            )
+            thumb_to_name = (
+                f"{to_prefix}_{base_name_no_ext}_thumb.jpg" if to_prefix else f"{base_name_no_ext}_thumb.jpg"
+            )
+            os.makedirs(self.thumbnails_folder, exist_ok=True)
+            thumb_from = os.path.join(self.thumbnails_folder, thumb_from_name)
+            thumb_to = os.path.join(self.thumbnails_folder, thumb_to_name)
             if os.path.exists(thumb_from):
-                shutil.move(thumb_from, thumb_to)
+                # If destination thumbnail exists for any reason, replace it
+                try:
+                    shutil.move(thumb_from, thumb_to)
+                except Exception:
+                    try:
+                        os.replace(thumb_from, thumb_to)
+                    except Exception:
+                        pass
             
             return True
         return False
@@ -251,7 +279,7 @@ class SlideshowManager:
             'next_change': None
         }
     
-    def push_next_image(self):
+    def push_next_image(self, manual_trigger=False):
         try:
             images = self.app_state.slideshow_state['images']
             current_image_name = self.app_state.slideshow_state['current_image_name']
@@ -283,16 +311,37 @@ class SlideshowManager:
                     return
             
             image_file = images[next_index]
-            image_path = os.path.join(folder_path, image_file)
             
-            subprocess.run([
-                os.getenv('PUSH_SCRIPT', './push_epaper_sierra_sorbet_fast.py'),
-                image_path,
-                '--host', os.getenv('ESP32_HOST', '192.168.1.100')
-            ], check=False, timeout=30)
+            # Update state for HTTP polling architecture
+            # Extract relative folder path from full folder path
+            rel_folder = os.path.relpath(folder_path, self.base_folder)
             
+            # Set the current image for HTTP polling
+            self.app_state.current_folder = rel_folder
+            self.app_state.current_image = image_file
             self.app_state.slideshow_state['current_image_name'] = image_file
             self.app_state.manual_override = False
+            
+            logger.info(f"Advanced to next image: {rel_folder}/{image_file}")
+            
+            # If manually triggered, reschedule the next automatic change
+            if manual_trigger and self.app_state.slideshow_state.get('job_id'):
+                try:
+                    # Remove existing job and create a new one
+                    self.scheduler.remove_job(self.app_state.slideshow_state['job_id'])
+                    interval = settings.get('interval', 300)
+                    job = self.scheduler.add_job(
+                        self.push_next_image,
+                        'interval',
+                        seconds=interval,
+                        id='slideshow_job',
+                        replace_existing=True,
+                        max_instances=1
+                    )
+                    self.app_state.slideshow_state['job_id'] = job.id
+                    logger.info(f"Rescheduled next change in {interval} seconds")
+                except Exception as e:
+                    logger.error(f"Error rescheduling job: {e}")
             
         except Exception as e:
             logger.error(f"Error in push_next_image: {e}")
@@ -326,8 +375,12 @@ class SlideshowManager:
             'settings': settings
         }
         
+        # Set the first image
         try:
-            self.push_next_image()
+            if images:
+                self.push_next_image()
+            else:
+                logger.warning("No images to display in slideshow")
         except Exception as e:
             logger.warning(f"Error pushing first image: {e}")
         
