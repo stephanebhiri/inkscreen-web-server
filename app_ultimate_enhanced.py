@@ -50,7 +50,7 @@ auth = HTTPBasicAuth()
 # Configuration
 BASE_FOLDER = os.getenv('BASE_FOLDER', './playlists')
 THUMBNAILS_FOLDER = os.getenv('THUMBNAILS_FOLDER', './thumbnails')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 MAX_IMAGE_SIZE_MB = 5
 MAX_STORAGE_MB = 8000
 
@@ -307,16 +307,32 @@ def api_get_playlist(folder_path=''):
         os.makedirs(full_path, exist_ok=True)
     
     playlist = playlist_manager.load_playlist(full_path)
+    settings = playlist.get('settings', {})
     
     images = []
-    for f in os.listdir(full_path):
-        if f.lower().endswith(('.jpg', '.jpeg', '.png')):
-            file_path = os.path.join(full_path, f)
-            images.append({
-                'name': f,
-                'size': os.path.getsize(file_path),
-                'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-            })
+    
+    # Use recursive scan if enabled
+    if settings.get('recursive', False):
+        for root, dirs, files in os.walk(full_path):
+            for f in files:
+                if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                    file_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(file_path, full_path)
+                    images.append({
+                        'name': rel_path,
+                        'size': os.path.getsize(file_path),
+                        'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                    })
+    else:
+        # Normal scan
+        for f in os.listdir(full_path):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                file_path = os.path.join(full_path, f)
+                images.append({
+                    'name': f,
+                    'size': os.path.getsize(file_path),
+                    'modified': datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                })
     
     return jsonify({'playlist': playlist, 'images': images})
 

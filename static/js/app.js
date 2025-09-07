@@ -861,6 +861,7 @@ function showPlaylistSettings() {
             document.getElementById('intervalInput').value = settings.interval;
             document.getElementById('loopToggle').classList.toggle('active', settings.loop);
             document.getElementById('shuffleToggle').classList.toggle('active', settings.shuffle);
+            document.getElementById('recursiveToggle').classList.toggle('active', settings.recursive || false);
             document.getElementById('descriptionInput').value = data.playlist.description || '';
             document.getElementById('settingsModal').classList.add('show');
         });
@@ -871,7 +872,8 @@ function savePlaylistSettings() {
     const settings = {
         interval: parseInt(document.getElementById('intervalInput').value),
         loop: document.getElementById('loopToggle').classList.contains('active'),
-        shuffle: document.getElementById('shuffleToggle').classList.contains('active')
+        shuffle: document.getElementById('shuffleToggle').classList.contains('active'),
+        recursive: document.getElementById('recursiveToggle').classList.contains('active')
     };
     
     const description = document.getElementById('descriptionInput').value;

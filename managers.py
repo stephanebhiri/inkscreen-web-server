@@ -60,7 +60,8 @@ class PlaylistManager:
                 'interval': 300,
                 'shuffle': False,
                 'loop': True,
-                'active': False
+                'active': False,
+                'recursive': False
             },
             'tags': [],
             'description': '',
@@ -82,7 +83,7 @@ class PlaylistManager:
         
         current_images = []
         for f in os.listdir(folder_path):
-            if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                 current_images.append(f)
         
         if new_order:
@@ -137,7 +138,7 @@ class FolderManager:
         self.ensure_base_folder()
         
         root_images = [f for f in os.listdir(self.base_folder) 
-                      if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                      if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
         root_playlist = self.playlist_manager.load_playlist(self.base_folder)
         
         tree = [{
@@ -168,7 +169,7 @@ class FolderManager:
                             'type': 'folder',
                             'children': children,
                             'image_count': len([f for f in os.listdir(item_path) 
-                                              if f.lower().endswith(('.jpg', '.jpeg', '.png'))]),
+                                              if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]),
                             'active': playlist.get('settings', {}).get('active', False)
                         })
             except PermissionError:
@@ -353,10 +354,21 @@ class SlideshowManager:
         settings = playlist.get('settings', {})
         interval = settings.get('interval', 300)
         
-        images = playlist.get('order', [])
-        if not images:
-            images = [f for f in os.listdir(folder_path) 
-                     if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        images = playlist.get("order", [])
+        
+        # Always rescan if recursive mode is enabled
+        if settings.get("recursive", False):
+            images = []  # Clear existing order for recursive scan
+            # Recursive scan
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    if file.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                        rel_path = os.path.relpath(os.path.join(root, file), folder_path)
+                        images.append(rel_path)
+        elif not images:
+            # Normal scan only if no order exists
+            images = [f for f in os.listdir(folder_path)
+                     if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))]
         
         if not images:
             return False
