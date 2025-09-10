@@ -38,3 +38,6 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
+*.bin
+*.q264
+*.mjpeg
